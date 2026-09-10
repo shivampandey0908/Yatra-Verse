@@ -2,6 +2,10 @@
   "name": "yatra-verse",
   "private": true,
   "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev --prefix backend",
     "start": "npm run start --prefix backend",
