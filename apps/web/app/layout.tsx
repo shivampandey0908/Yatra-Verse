@@ -1,0 +1,3 @@
+import type { Metadata } from "next"; import "./globals.css"; import { SiteHeader } from "../components/site-header"; import { SiteFooter } from "../components/site-footer";
+export const metadata: Metadata = { title: { default: "YATRA VERSE | Travel smarter", template: "%s | YATRA VERSE" }, description: "Destination intelligence and trusted local guides for India.", metadataBase: new URL("http://localhost:3000") };
+export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="en"><body><SiteHeader /><main>{children}</main><SiteFooter /></body></html>; }

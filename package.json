@@ -1,0 +1,10 @@
+{
+  "name": "yatra-verse",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm run dev --prefix backend",
+    "start": "npm run start --prefix backend",
+    "check": "node --check backend/server.js && node --check frontend/app.js"
+  }
+}

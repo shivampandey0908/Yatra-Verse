@@ -1,0 +1,1 @@
+export function SiteFooter() { return <footer className="border-t border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-9 text-sm text-slate-500 md:flex-row md:justify-between"><p>© {new Date().getFullYear()} YATRA VERSE</p><p>Travel smarter. Explore deeper. Travel safer.</p></div></footer>; }
