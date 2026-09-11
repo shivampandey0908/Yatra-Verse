@@ -59,6 +59,19 @@ const guideSchema = new mongoose.Schema({
   // These are shared with a traveler only on their confirmed trip, never in the public guide directory.
   contactPhone: { type: String, trim: true, maxlength: 32, default: "" },
   contactEmail: { type: String, trim: true, lowercase: true, maxlength: 254, default: "" },
+  // Profile media is stored as URLs so hosts can use an image CDN, Drive share link, or their own hosted images.
+  profilePhotoUrl: { type: String, trim: true, maxlength: 2000, default: "" },
+  dateOfBirth: { type: Date, default: null },
+  maritalStatus: { type: String, enum: ["", "single", "married", "prefer_not_to_say"], default: "" },
+  gender: { type: String, trim: true, maxlength: 40, default: "" },
+  address: { type: String, trim: true, maxlength: 500, default: "" },
+  city: { type: String, trim: true, maxlength: 100, default: "" },
+  postalCode: { type: String, trim: true, maxlength: 20, default: "" },
+  yearsOfExperience: { type: Number, min: 0, max: 80, default: 0 },
+  propertyName: { type: String, trim: true, maxlength: 160, default: "" },
+  propertyType: { type: String, enum: ["", "homestay", "hotel", "guesthouse", "other"], default: "" },
+  propertyDescription: { type: String, trim: true, maxlength: 2000, default: "" },
+  propertyPhotoUrls: { type: [String], default: [] },
   verificationStatus: { type: String, default: "not_started" },
   visibility: { type: String, default: "draft" }, rating: { average: { type: Number, default: 0 }, count: { type: Number, default: 0 } }
 }, { timestamps: true });
@@ -104,13 +117,29 @@ const starterDestinations = [
 
 async function ensureStarterDestinations() {
   if (await Destination.exists({ status: "published" })) return;
-  await Destination.bulkWrite(starterDestinations.map(destination => ({
-    updateOne: {
-      filter: { slug: destination.slug },
-      update: { $set: { status: "published" }, $setOnInsert: { ...destination, country: "India", coordinates: { type: "Point", coordinates: destination.coordinates }, status: "published" } },
-      upsert: true
-    }
-  })));
+
+  await Destination.bulkWrite(
+    starterDestinations.map(destination => ({
+      updateOne: {
+        filter: { slug: destination.slug },
+        update: {
+          $set: {
+            status: "published"
+          },
+          $setOnInsert: {
+            ...destination,
+            country: "India",
+            coordinates: {
+              type: "Point",
+              coordinates: destination.coordinates
+            }
+          }
+        },
+        upsert: true
+      }
+    }))
+  );
+
   console.info("Added starter destinations for local development.");
 }
 
@@ -149,6 +178,11 @@ function guideOnly(req, res, next) { return req.user.roles?.includes("guide") ? 
 function adminOnly(req, res, next) { return req.user.roles?.includes("admin") ? next() : sendError(res, 403, "This area is for administrators."); }
 function cleanList(value) { return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : []; }
 function isId(value) { return mongoose.isObjectIdOrHexString(value); }
+function cleanImageUrls(value, max = 8) { return cleanList(value).filter((url) => /^https?:\/\//i.test(url)).slice(0, max); }
+function publicGuide(guide) {
+  const { contactPhone, contactEmail, dateOfBirth, maritalStatus, gender, address, city, postalCode, ...profile } = guide;
+  return profile;
+}
 async function bookingParticipant(bookingId, userId) {
   const booking = await Booking.findById(bookingId);
   if (!booking) return null;
@@ -253,7 +287,8 @@ app.get("/api/destinations/:slug", async (req, res) => { const item = await Dest
 app.get("/api/guides", async (req, res) => {
   const filter = { verificationStatus: "approved", visibility: "published" };
   if (isId(req.query.destination)) filter.destinationIds = req.query.destination;
-  res.json({ data: await Guide.find(filter).populate("userId", "name").populate("destinationIds", "name slug state").lean() });
+  const guides = await Guide.find(filter).populate("userId", "name").populate("destinationIds", "name slug state").lean();
+  res.json({ data: guides.map(publicGuide) });
 });
 app.get("/api/guides/me/profile", auth, guideOnly, async (req, res) => res.json({ data: await Guide.findOne({ userId: req.user.id }).populate("destinationIds", "name state").lean() }));
 app.put("/api/guides/me/profile", auth, guideOnly, async (req, res) => {
@@ -262,7 +297,9 @@ app.put("/api/guides/me/profile", auth, guideOnly, async (req, res) => {
   const tripOfferings = Array.isArray(body.tripOfferings) ? body.tripOfferings.map((item) => ({ name: String(item.name || "").trim(), description: String(item.description || "").trim(), included: Boolean(item.included), extraCost: Number(item.extraCost || 0) })).filter((item) => item.name) : [];
   const contactEmail = String(body.contactEmail || "").trim().toLowerCase();
   if (contactEmail && !/^\S+@\S+\.\S+$/.test(contactEmail)) return sendError(res, 400, "Enter a valid guide contact email.");
-  const update = { bio: String(body.bio || "").trim(), residenceState: String(body.residenceState || "").trim(), serviceStates: cleanList(body.serviceStates), languages: cleanList(body.languages), specialties: cleanList(body.specialties), destinationIds: cleanList(body.destinationIds).filter(isId), pricePerDay: body.pricePerDay === "" || body.pricePerDay == null ? undefined : Number(body.pricePerDay), packages, tripOfferings, availabilityNote: String(body.availabilityNote || "").trim(), contactPhone: String(body.contactPhone || "").trim(), contactEmail };
+  const dateOfBirth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
+  if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) return sendError(res, 400, "Enter a valid date of birth.");
+  const update = { bio: String(body.bio || "").trim(), residenceState: String(body.residenceState || "").trim(), serviceStates: cleanList(body.serviceStates), languages: cleanList(body.languages), specialties: cleanList(body.specialties), destinationIds: cleanList(body.destinationIds).filter(isId), pricePerDay: body.pricePerDay === "" || body.pricePerDay == null ? undefined : Number(body.pricePerDay), packages, tripOfferings, availabilityNote: String(body.availabilityNote || "").trim(), contactPhone: String(body.contactPhone || "").trim(), contactEmail, profilePhotoUrl: cleanImageUrls([body.profilePhotoUrl], 1)[0] || "", dateOfBirth, maritalStatus: ["single", "married", "prefer_not_to_say"].includes(body.maritalStatus) ? body.maritalStatus : "", gender: String(body.gender || "").trim(), address: String(body.address || "").trim(), city: String(body.city || "").trim(), postalCode: String(body.postalCode || "").trim(), yearsOfExperience: Math.max(0, Math.min(80, Number(body.yearsOfExperience || 0))), propertyName: String(body.propertyName || "").trim(), propertyType: ["homestay", "hotel", "guesthouse", "other"].includes(body.propertyType) ? body.propertyType : "", propertyDescription: String(body.propertyDescription || "").trim(), propertyPhotoUrls: cleanImageUrls(body.propertyPhotoUrls) };
   const profile = await Guide.findOneAndUpdate({ userId: req.user.id }, { $set: update, $setOnInsert: { userId: req.user.id } }, { new: true, upsert: true, runValidators: true }).populate("destinationIds", "name state");
   res.json({ data: profile });
 });
@@ -292,6 +329,11 @@ app.patch("/api/guides/me/requests/:bookingId", auth, guideOnly, async (req, res
   } else booking.status = "declined_by_guide";
   await booking.save();
   res.json({ data: booking });
+});
+app.get("/api/guides/:guideId", async (req, res) => {
+  if (!isId(req.params.guideId)) return sendError(res, 400, "Invalid guide.");
+  const guide = await Guide.findOne({ _id: req.params.guideId, verificationStatus: "approved", visibility: "published" }).populate("userId", "name").populate("destinationIds", "name slug state").lean();
+  guide ? res.json({ data: publicGuide(guide) }) : sendError(res, 404, "Guide not found.");
 });
 
 app.get("/api/reviews/guide/:guideId", async (req, res) => {
