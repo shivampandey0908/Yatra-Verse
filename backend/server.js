@@ -237,8 +237,13 @@ app.post("/api/auth/register", async (req, res) => {
   if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(email || "") || String(password || "").length < 8) return sendError(res, 400, "Enter a name, valid email, and password of at least 8 characters.");
   if (await User.exists({ email: email.toLowerCase() })) return sendError(res, 409, "An account with this email already exists.");
   const user = await User.create({ name: name.trim(), email: email.toLowerCase(), passwordHash: await argon2.hash(password), roles: role === "guide" ? ["traveler", "guide"] : ["traveler"], emailVerified: false });
-  try { await issueVerificationOtp(user, { allowCooldown: true }); }
-  catch (error) { await User.findByIdAndDelete(user._id); return sendError(res, 503, emailError()); }
+  try {
+  await issueVerificationOtp(user, { allowCooldown: true });
+} catch (error) {
+  console.error("Verification email failed:", error);
+  await User.findByIdAndDelete(user._id);
+  return sendError(res, 503, emailError());
+}
   res.status(201).json({ data: { email: user.email, role: role === "guide" ? "guide" : "traveler", verificationRequired: true } });
 });
 
